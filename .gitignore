@@ -1,0 +1,9 @@
+# Large source snapshots — provenance, not authored content. Keep them out
+# of history; re-ingest if needed rather than diffing megabytes of zip.
+downloads/_ingested/*.zip
+
+# macOS
+.DS_Store
+
+# Anything you explicitly mark local-only for this client
+*.local.md
