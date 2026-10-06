@@ -65,6 +65,38 @@ CREATE TABLE entity (           -- a discrete business object
 ) INHERITS (owned);
 ```
 
+```
+       ┌──────────────────────────────────────┐
+       │ owned                                │  tenant_id, owner_id
+       └──────────────────┬───────────────────┘  (the tenancy carrier)
+                          │
+           INHERITS (27)  │
+        ┌─────────────────┴──────────────────┐
+        │                                    │
+        ▼                                    ▼
+ ┌─────────────────────────┐      satellite tables — tenancy
+ │ entity                  │      but not identity:
+ │ id (PK), created_at,    │        membership, audit_log,
+ │ updated_at, deleted_at, │        entity_status_changes,
+ │ name, status, metadata  │        budget_line_item, ledger_*,
+ └────────────┬────────────┘        formal_*
+              │
+ INHERITS (14)│
+              ▼
+ the business nouns — application, organisation, project, fund,
+ programme, file_uploads, project_payments, bank_accounts, …
+
+
+  CARRIED BY INHERITANCE      NOT CARRIED
+  ──────────────────────      ────────────────────────────────────────────
+  columns                     PRIMARY KEY  → 22 tables have none      (F4)
+                              indexes      → none on the core tables  (F4)
+                              RLS policies → helper re-run per child:
+                                             164 policies instead of 8
+                              FOREIGN KEY  → 1 in the entire schema
+                              CHECK        → 2 in the entire schema
+```
+
 41 inheritance clauses across the migrations — 14 from `entity`, 27 from
 `owned` [verified]. `entity` descendants are the business nouns (`application`,
 `organisation`, `project`, `fund`, `programme`, `file_uploads`,

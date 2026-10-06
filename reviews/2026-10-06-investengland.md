@@ -289,3 +289,4 @@ Worth recording, because a findings list reads worse than the codebase is.
 | 2026-10-06 | Initial review at `58fbc761` | First pass after survey, architecture and data-model docs |
 | 2026-10-06 | F2 upgraded from inferred to verified-by-execution; scope corrected to include the API role | Reproduced in a throwaway PG16 container against the repo's own schema |
 | 2026-10-06 | F1 added as Critical | Found while verifying the severity of the demo-endpoint exposure for this review |
+| 2026-10-06 | De-duplicated `01`/`02` (02 now owns RLS coverage and DB principals); added four diagrams | Information-architecture pass: separate mechanism from coverage, make the inheritance consequences visual |

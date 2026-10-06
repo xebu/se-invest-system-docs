@@ -54,10 +54,10 @@ ingress takes its place [verified for the absence; the substitution is
                     └──────────────────────────────────────┘
                               ▲              ▲
                      ┌────────┘              └────────┐
-                ┌────────┐                      ┌──────────────┐
-                │ broker │◀── Redis queue ──────│  (producers) │
-                │scheduler│                     └──────────────┘
-                └────────┘
+              ┌───────────┐                     ┌──────────────┐
+              │  broker   │◀── Redis queue ─────│  (producers) │
+              │ scheduler │                     └──────────────┘
+              └───────────┘
                      │
                      ▼  HTTP, tenant API key
               ┌──────────────┐
@@ -133,6 +133,44 @@ The read path is safe-by-construction in two ways: the credential cannot write,
 and every query is wrapped in a transaction that sets the RLS session variables
 first (`frontend/foundational/.server/db.ts:20-28`).
 
+```
+                              browser
+                                 │  form data (default) / GET
+                                 ▼
+                  ┌────────────────────────────┐
+                  │  route loader / action     │  grantmakers / grantseekers
+                  └──────────────┬─────────────┘
+                                 │
+                MUTATE  ┌────────┴────────┐  READ
+                        │                 │
+                        ▼                 ▼
+                 Module.post()        sql`…` wrapper
+                 · HTTP               · BEGIN
+                 · Bearer JWT         · set_config('rls.tenant', …)
+                 · X-API-Key          · set_config('rls.owner',  …)
+                 · X-Tenant-Domain    · ‹query›
+                        │                 │
+                        ▼                 │
+                   ┌─────────┐            │
+                   │   api   │            │
+                   └────┬────┘            │
+                        │ asyncpg         │
+           POSTGRES_MUTATE_URI     POSTGRES_QUERY_URI
+           role: readwrite_access  role: readonly_access
+           (SELECT/INSERT/         (SELECT only — the credential
+            UPDATE/DELETE)          itself forbids writes)
+                        │                 │
+                        └────────┬────────┘
+                                 ▼
+                           Postgres 16
+                      RLS on 41 of 59 tables
+```
+
+Two properties fall out of this shape. The "all mutations via the API" rule is
+enforced by the credential, not by agreement — the BFF physically cannot write.
+But the read path makes the schema a frontend interface, which is finding **F6**,
+and the RLS wrapper it depends on is bypassed for views, which is **F2**.
+
 Consequences worth carrying into the review: a screen's data needs are
 satisfiable without an API endpoint, which keeps the API small, but it also
 means **the database schema is a public interface of the frontend**. A column
@@ -165,38 +203,54 @@ policies (select/insert/update/delete) against two session variables,
 | 2 | `session.owner = session.tenant` | staff read/write |
 | 3 | `data.owner = 000…0` | shared, readable by all |
 
-Two base tables, `owned` and `entity`, carry these columns, and business
-tables inherit from them using **Postgres table inheritance**
-— 41 clauses across the migrations (14 from `entity`, 27 from `owned`), 14 of
-them in `000000000001__entities.sql` alone. Because PG inheritance
-does not propagate row-level policies to children, the helper must be invoked
-per child table — a constraint the migration notes in a comment
-("Annoyingly, we have to apply policies on the child tables")
-[verified: `000000000000__rls.sql:221`].
+The two columns live on base tables that business tables inherit from. The
+architectural consequence is that **RLS policies do not descend through
+Postgres inheritance**, so the helper must be invoked per child table — a
+constraint the migration notes in a comment ("Annoyingly, we have to apply
+policies on the child tables") [verified: `000000000000__rls.sql:221`]. The
+inheritance model itself, and the other three things that fail to descend, are
+`02-data-model.md` §2.
 
-**Coverage**: 41 of 60 tables call `apply_ownership_policies` [verified by
-comparing every `create table` against every helper invocation across
-`backend/sql/migrations/`]. The 19 that do not are: `tenants`, `users`,
-`user_roles`, `user_logins`, `user_login_errors`, `locations`,
-`entity_locations`, `geo_cache`, `owned`, `api_calls`,
-`application_urn_sequence`, `sent_emails`, `email_attachments`,
-`informationrequest_notification_queue`, `idv_persons`, `idv_sessions`,
-`stripe_customers`, `stripe_events`, `stripe_objects`. Several are
-legitimately tenant-global (`tenants`, `locations`, `geo_cache`, the `owned`
-base table), and `idv_persons`/`idv_sessions` are read pre-authentication from
-a public route where no tenant context exists yet — documented inline at
-`frontend/foundational/authn.ts:66-67,77-78` [verified]. Whether the remainder
-is deliberate is **not** established; it belongs in `02-data-model.md` and the
-review.
+How a row is evaluated — and where that evaluation is skipped:
 
-Four distinct Postgres principals exist — super, admin, mutate, query
-[verified: `backend/sql/pgutil:17-20`] — plus two in-database roles,
-`readonly_access` and `readwrite_access`. `unrest` selects the pool from the
-request's operational context: mutate contexts get the writer pool, query
-contexts the reader (`backend/vendor/unrest/unrest/db/pool.py:100-119`). This
-is the mechanism behind the framework's "strong distinction between `query` and
+```
+   query against a TABLE                     query against a VIEW
+   runs as the connected role                runs as the VIEW OWNER (admin),
+   (queryuser / mutateuser)                  because no view sets security_invoker
+            │                                          │
+            ▼                                          ▼
+   ┌─────────────────────┐                  ┌──────────────────────────┐
+   │ RLS policies apply  │                  │ owner is exempt from RLS │
+   └──────────┬──────────┘                  │ (no FORCE ROW LEVEL SEC) │
+              │                             └────────────┬─────────────┘
+              ▼                                          ▼
+   rule 0:  row.tenant_id = rls.tenant ?       EVERY ROW, EVERY TENANT
+            │                                   ⚠ verified defect — F2
+       no ──┴──▶ row hidden
+      yes
+       │
+       ├─ rule 1   row.owner_id = rls.owner   ──▶ visible  (owner's own data)
+       ├─ rule 2   rls.owner    = rls.tenant  ──▶ visible  (staff session)
+       ├─ rule 3   row.owner_id = 000…0       ──▶ visible  (shared reference)
+       └─ otherwise                           ──▶ row hidden
+```
+
+The left-hand path is correct and was confirmed working. The right-hand path is
+finding **F2** — verified by execution, affecting 11 of 12 views and both
+application roles. Detail and repro in `02-data-model.md` §3.1.
+
+Coverage is partial — 41 of 59 tables are policied, and the exclusions are
+catalogued with their justifications in `02-data-model.md` §3, which also owns
+the principal inventory and table-level rights (§4).
+
+The architectural half of that is pool selection: `unrest` picks the connection
+pool from the request's operational context — mutate contexts get the writer,
+query contexts the reader (`vendor/unrest/unrest/db/pool.py:100-119`). This is
+the mechanism behind the framework's "strong distinction between `query` and
 `mutate`" that the README mentions; `@api.query` registers GET/QUERY,
 `@api.mutate` registers POST (`vendor/unrest/unrest/api/__init__.py:89-107`).
+Because the two pools authenticate as different Postgres roles, the read/write
+split is enforced by credential rather than by convention [verified].
 
 **Application-level authorisation** is a claims model: 30 `Roles` attributes over 29 distinct
 permission names — `Roles.user` is a composition,
@@ -304,8 +358,38 @@ HTTP client that forwards the same interface call to the `integrations` service
 authenticated with the tenant's API key
 (`foundational/integrations/proxies.py:22-62`).
 
+```
+  domain code:  client = await get_aml_client()
+                       │
+                       ▼
+    tenant.integrations['aml'] ── unset ──▶ hardcoded default: 'creditsafe'
+                       │                                 │
+                       └────────────────┬────────────────┘
+                                        ▼
+                           value starts with 'http' ?
+                      no  ┌─────────────┴─────────────┐  yes
+                          ▼                           ▼
+            registry['aml:creditsafe']      registry['aml:$proxy'](url)
+                          │                           │
+                          ▼                           ▼
+            CreditsafeAntiMoney…            ProxyAntiMoney…
+            (in-process, implements         (implements the SAME
+             AntiMoneyLaunderingService)     interface, over HTTP)
+                                                      │
+                                        HTTP + tenant API key
+                                                      ▼
+                                         ┌──────────────────────┐
+                                         │ integrations service │
+                                         └──────────┬───────────┘
+                                                    ▼
+                                      registry['aml:creditsafe']
+                                      implementations/aml/creditsafe.py
+```
+
 So the same domain code runs against a real provider in-process or against a
 remote provider over HTTP, chosen by configuration, with no call-site change.
+The `$proxy` implementation satisfies the same abstract interface as the real
+one, which is what makes the substitution invisible to the caller.
 Concrete providers live only in `backend/integrations/implementations/`
 (13 files across aml, finance, geo, kyb, kyc, payments) and are imported solely
 by the integrations service entry point
