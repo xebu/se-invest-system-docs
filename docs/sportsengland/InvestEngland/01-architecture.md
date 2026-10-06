@@ -207,13 +207,34 @@ decorator arguments on endpoints (`Roles.customer`, `Roles.can_batch_payments`,
 BFF modules (`.server/modules.ts:25-47`), where a claim grants write only if
 its value is truthy.
 
-One mechanism to flag now because it shapes how much the local environment can
-be trusted: `Permission.__call__` returns `True` unconditionally when
+### 4.1 Environment-keyed gates
+
+Several security-relevant behaviours are switched on a single environment
+string, and this is the system's weakest seam [verified].
+
+`Permission.__call__` returns `True` unconditionally when
 `config.is_development()` (`foundational/authz.py:9-15`), and the API's tenant
-resolution likewise substitutes a hardcoded domain in development
+resolution substitutes a hardcoded domain in the same condition
 (`api/endpoints/auth.py:46-47`). Correct for local work; it means permission
-behaviour is **not** exercised by anything running in development mode
-[verified].
+behaviour is **not** exercised by anything running in development mode.
+
+More consequentially, `is_production()` is defined as
+`get("ENVIRONMENT") == "production"`
+(`vendor/unrest/unrest/contexts/config.py:13-14`) — while three comments in
+three files state that Azure sets `ENVIRONMENT=live`, including on live itself
+(`config.py:19-20`; `foundational/authn.py:28-29`;
+`frontend/foundational/.server/configuration.ts:49-50`). The team worked around
+this by introducing a separate `ARENA_TIER` variable and `is_internal_tier()`,
+and used *that* to gate OTP bypass and the email whitelist — but
+`is_production()` still gates the demo endpoints (`api/endpoints/demo.py:13`)
+and the API documentation routes (`api/endpoints/__init__.py:195,202,239`).
+
+So the codebase contains two generations of environment detection: the original
+`ENVIRONMENT`-keyed one, known to be wrong and still load-bearing for two
+things, and the `ARENA_TIER`-keyed replacement that fails safe. See **F1** in
+`reviews/2026-10-06-investengland.md` — this is the review's top finding, and
+the architectural point is that the gate is a negative check (`if not
+production`) on an untrusted string, which fails *open*.
 
 Tenant resolution at the edge: `X-API-Key` if present, else the
 `X-Tenant-Domain` header forwarded by the BFF from the request hostname
