@@ -57,6 +57,7 @@ against exposure rather than against velocity.
 | F20 | Interfaces | **High** | Migrations never run on a `live-*` deploy — the `db-migrations` job condition omits `live-`, and the workflow still goes green | `.github/workflows/main.yml:209-218` | [verified] |
 | F21 | Deploy | **High** | Where migrations do run, they run *after* the new code is live, guaranteeing a window of code/schema mismatch | `main.yml` job graph: `push-image → deploy → db-migrations` | [verified] |
 | F22 | Testing | **High** | A thorough RLS tenant-isolation suite exists but defines no pytest-collectable tests, runs only via a manual recipe, and tests tables not views — the direct reason F2 survived | `foundational/tests/demo/test_rls.py`; `justfile:306-309` | [verified] |
+| F34 | Finance | **High** | Outbound BACS instructions omit the payment reference and account name (commented out as "ALWAYS fail validation") and send the literal placeholder `"STC TEXT"` as statement text | `integrations/implementations/payments/ptx.py:188-190`, caller at `:344` | [verified] |
 | F6 | Coupling | Medium | The DB schema is an uncontracted public interface of the frontend — 35 direct SQL sites, no compiler or contract catches a column rename | `frontend/foundational/*.ts` (15 modules import the SQL helper) | [verified] |
 | F7 | Structure | Medium | Four genuine top-level import cycles inside `foundational`, all centred on `entities` | `entities/applications.py:6-7` ↔ `formal/attachments.py:3`; `infra/tickets.py:13` ↔ `entities/applications.py:15`; + `compliance`, `schema` | [verified] |
 | F8 | Data / ops | Medium | `pgutil restore` runs `psql` without `ON_ERROR_STOP`, so a half-failed restore reports success | `sql/pgutil:274` (vs the commented-out `:273` and every other call site) | [verified] |
@@ -292,12 +293,72 @@ Three facts about it:
 3. **It tests tables, not views.** Zero matches for `view`,
    `project_payment_schedule` or `security_invoker`.
 
+There is a second, quieter signal in the same direction. Six `FIXME` comments
+across four test files record that tests were adapted to RLS by **escalating
+privilege** rather than by modelling the real actor [verified]:
+
+- `test_payments.py:830,945` — "usercontext(admin) used for RLS compat — was
+  previously running without context"
+- `test_contact_roles.py:260,269` — "as_org used for RLS compat — **should use a
+  second customer in org2's context**"
+- `test_document_rendering.py:118`, `test_email.py:153` — "systemcontext used
+  for RLS compat — should use user/admin context faithfully"
+
+The two `test_contact_roles.py` notes are the telling ones: the faithful test
+would have been a second customer in another organisation's context — exactly
+the cross-tenant shape that would exercise isolation. The team knew, wrote it
+down, and moved on. Worth clearing these six alongside the suite itself.
+
 So the property F2 breaks has a dedicated test suite in this repository that
 (a) never runs automatically and (b) has a blind spot exactly where the defect
 is. That is a more interesting failure than forgetting to test — and the fix
 makes `verification/2026-10-06-rls-view-bypass.sh` permanent: convert the file
 to collectable tests, add it to CI, and extend it to iterate the 12 views
 alongside the 41 tables. Detail in `06-testing.md` §3.
+
+## F34 — BACS payments carry no reference or payee name
+
+**High.** Found while auditing TODO/FIXME markers.
+
+`PTXClient.create_instruction` builds the BACS payment instruction with two
+fields commented out (`ptx.py:188-190`) [verified]:
+
+```python
+"accountNumber": payment["account_number"],
+# FIXME: These seem to ALWAYS fail validation for unexplained / undocumented reasons!!!!
+# "reference": payment["reference"],
+# "name": payment["account_name"],
+"batchId": batch_id,
+```
+
+The `text` field that remains is supplied by the only caller as the literal
+string `"STC TEXT"` (`ptx.py:344`) [verified]:
+
+```python
+_instruction = await self.client.create_instruction(instruction, _batch["id"], "STC TEXT")
+```
+
+So each instruction reaches the bank with no payment reference, no payee name,
+and a placeholder narrative. Consequences, if this path is live:
+
+- **Grantees cannot reconcile.** `project_payments.reference` is `NOT NULL` and
+  is populated — the system computes a reference and then declines to send it.
+  The recipient sees "STC TEWT"-style placeholder text on their statement.
+- **No Confirmation of Payee.** Omitting `name` removes the account-name check
+  that CoP relies on, so a mistyped account number cannot be caught by the
+  payee-name mismatch.
+
+The FIXME is candid — four exclamation marks and an admission that the cause is
+undocumented — so this is a known workaround, not an oversight. That makes it a
+question of whether it was ever resolved with Bottomline/PTX rather than whether
+anyone noticed.
+
+**What I cannot determine:** whether `pay` resolves to `ptx` in production (the
+registry default is `ptx`, but tenant config can override), and whether the PTX
+payment profile supplies a reference server-side — a nearby TODO at `:218`
+mentions profile-level configuration, so that is plausible. **Confirm before
+rating this as live.** If PTX is the production provider and the profile does
+not fill these in, it is the most directly user-visible defect in this review.
 
 ---
 
@@ -376,3 +437,4 @@ Worth recording, because a findings list reads worse than the codebase is.
 | 2026-10-06 | F1 added as Critical | Found while verifying the severity of the demo-endpoint exposure for this review |
 | 2026-10-06 | De-duplicated `01`/`02` (02 now owns RLS coverage and DB principals); added four diagrams | Information-architecture pass: separate mechanism from coverage, make the inheritance consequences visual |
 | 2026-10-06 | Added `03-apis`, `04-dependencies`, `05-deployment`, `06-testing`; 14 new findings (F20–F33), 3 of them High | Completing the reference set surfaced the migration-skip on live, the deploy/migrate ordering, and the reason F2 survived |
+| 2026-10-06 | F34 added (High): BACS instructions omit reference and payee name. F22 strengthened with the six "RLS compat" test FIXMEs | Found while auditing TODO/FIXME density |

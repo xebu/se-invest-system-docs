@@ -16,7 +16,7 @@ from the `InvestEngland` label used in the engagement CLAUDE.md — see Open que
 | 06-testing.md | Coverage, mocks, critical gaps | **done** (58fbc761) |
 
 ## Reading order
-1. `reviews/2026-10-06-investengland.md` — Summary + 33 severity-rated findings.
+1. `reviews/2026-10-06-investengland.md` — Summary + 34 severity-rated findings.
 2. This index and the reference docs below for the evidence behind each.
 3. `verification/` — executable repros for findings verified by execution.
 
