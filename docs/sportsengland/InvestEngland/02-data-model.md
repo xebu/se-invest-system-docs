@@ -159,48 +159,120 @@ next_application_urn", and is written solely by a `SECURITY DEFINER` function
 RLS-on-with-no-policy is deny-all, so that table is sealed except through its
 function. That is a deliberate, correct use of the mechanism.
 
-### 3.1 The views bypass RLS
+### 3.1 The views bypass RLS — verified by execution
 
-This is the most consequential thing in this document.
+**This is confirmed, not inferred.** It was reproduced on 2026-10-06 against
+the repo's own `export/schema.sql` loaded into a throwaway PostgreSQL 16.15
+container. The repro script is checked in at
+`_workspace/verification/2026-10-06-rls-view-bypass.sh` and runs end-to-end from
+a clean state. It touches nothing in the repo.
 
-All 12 views are `OWNER TO admin` [verified: 12 `ALTER VIEW ... OWNER TO admin`
-lines]. The tables are also owned by `admin` (e.g. `ALTER TABLE
-public.application OWNER TO admin`). The schema contains **zero**
-`security_invoker` and **zero** `FORCE ROW LEVEL SECURITY` [verified: `grep -c`
-returns 0 for both, in the snapshot and in the migrations].
+The setup mirrors `pgutil` exactly, including the detail that makes the test
+valid: **`admin` is not a superuser** upstream — `SUPERUSER` is commented out at
+`pgutil:107` — because a superuser would bypass RLS for an unrelated reason and
+prove nothing.
 
-In PostgreSQL those three facts compose as follows: a view without
-`security_invoker` reads its base tables as the *view owner*, and a table owner
-is exempt from that table's row-level policies unless `FORCE ROW LEVEL
-SECURITY` is set. So a query against any of these views is evaluated as
-`admin`, and no policy applies.
+Three premises, each confirmed live against the loaded schema rather than by
+grep:
 
-The BFF — which connects as the separate read-only `query` user precisely so
-that RLS constrains it — queries five of them [verified]:
-`project_payment_schedule` (10 call sites), `inferred_assignments` (6),
-`export_360_giving` (2), `programme_funding_allocations` (2),
-`user_organisational_roles_summary` (1).
+```
+views=12   security_invoker=0   force_rls=0   owners=admin
+```
 
-The views do not compensate with their own tenant predicate.
-`project_payment_schedule` joins `project_payments`, `project`, `organisation`,
-`bank_accounts`, `application`, `project_payment_line_items` and
-`budget_line_item_project_year` with no `tenant_id` filter anywhere
-(`export/schema.sql:1381-1420`); `inferred_assignments` likewise
-(`:1083-1098`) [verified]. Nor do the call sites:
-`frontend/foundational/funds.ts:486-496` is
-`select *, … from project_payment_schedule where status = 'approved'`
-— the only predicate is the payment status [verified].
+All 12 views and all 59 tables have the single owner `admin`; no view sets
+`security_invoker`; no table sets `FORCE ROW LEVEL SECURITY`. The loaded schema
+also reproduced the static counts exactly — 59 tables, 12 views, 164 policies,
+41 RLS-enabled tables.
 
-Caveat, stated plainly: I have not executed a query to confirm the behaviour,
-and I cannot from a read-only clone. The conclusion follows from documented
-PostgreSQL semantics plus three verified schema facts. **Impact is latent
-rather than live** — the demo dataset contains exactly one tenant row
-[verified by counting the `COPY public.tenants` block], and
+**The result.** Two tenants were seeded through `project_payment_schedule`'s
+full seven-table join chain. A session was then scoped to tenant A with the same
+two `set_config` calls the BFF issues (`frontend/foundational/.server/db.ts:25-26`):
+
+| Connected as | Direct table (`application`) | Via view (`project_payment_schedule`) |
+|---|---|---|
+| `queryuser` (`readonly_access`, the BFF) | **1 row** | **2 rows** |
+| `mutateuser` (`readwrite_access`, the API) | **1 row** | **2 rows** |
+
+Running the real BFF query verbatim — `select … from project_payment_schedule
+where status = 'approved'` (`frontend/foundational/funds.ts:486-496`) — returned
+both tenants' rows, exposing the other tenant's organisation name, payment
+reference and amount:
+
+```
+ organisation_name | reference |  status
+-------------------+-----------+----------
+ Org a             | PAYREF-a  | approved
+ Org b             | PAYREF-b  | approved
+```
+
+RLS works correctly on direct table access and does not apply through the views.
+
+**Correction to my earlier scope.** I previously framed this as a BFF problem.
+It is not: the API's `readwrite_access` role is affected identically, because it
+is also not the table owner. `entity_owners` returned 10 rows to a tenant-scoped
+`mutateuser` session against 1 from the table. Every consumer of these views is
+affected, not just the read path.
+
+**Blast radius.** 11 of the 12 views read at least one RLS-protected table
+[verified via `pg_depend`]:
+
+| View | RLS tables read |
+|---|---|
+| `project_payment_schedule` | 9 |
+| `entity_owners` | 6 |
+| `programme_funding_allocations` | 5 |
+| `programme_funding_candidates` | 5 |
+| `financial_planning` | 4 |
+| `inferred_assignments` | 4 |
+| `user_organisational_roles_summary` | 2 |
+| `user_roles_derived` | 2 |
+| `export_360_giving` | 1 |
+| `funding_revenue_candidates` | 1 |
+| `programme_expense_candidates` | 1 |
+
+Only `entity_location_details` is clean, and only because every table it reads
+(`entity_locations`, `locations`, `geo_cache`) is itself outside RLS — which is
+to say it is unaffected by accident, not by design.
+
+Three of the views are **nested**, so a fix must be applied at every level
+[verified]: `export_360_giving` → `entity_location_details`, and both
+`funding_revenue_candidates` and `programme_expense_candidates` →
+`programme_funding_candidates`.
+
+**Impact is latent, not live** — there is one tenant row in the demo data, and
 `backend/tenants/tenants.json` is git-crypt encrypted so the deployed tenant
-count is unknown [assumed single-tenant]. The fix is mechanical
-(`WITH (security_invoker = true)` on each view, PG15+; the stack is PG16) and
-the test to prove it is a two-tenant fixture. This belongs in the review as the
-highest-priority item.
+count is unknown [assumed single-tenant]. The defect is in the isolation
+mechanism, which is load-bearing the moment a second tenant exists.
+
+### 3.1.1 The fix, also verified
+
+`ALTER VIEW … SET (security_invoker = true)` on all 12 views resolves it
+completely, for both roles, with no over-blocking — each tenant sees exactly its
+own row, and the owner (migrations, `pg_dump`) is unaffected [verified]. It is
+safe here precisely because `pgutil`'s `perms()` already grants
+`SELECT ON ALL TABLES` to `readonly_access`, which is what `security_invoker`
+then checks.
+
+`FORCE ROW LEVEL SECURITY` on the 41 tables also closes the leak, **but breaks
+the owner** and should not be used. With FORCE applied, `admin` querying
+`application` fails outright:
+
+```
+ERROR: unrecognized configuration parameter "rls.owner"
+CONTEXT: SQL function "session_owner_id" statement 1
+```
+
+Because `session_tenant_id()` and `session_owner_id()` call
+`current_setting('rls.tenant')` *without* the `missing_ok` argument
+(`migrations/000000000000__rls.sql:19,23`) [verified by reading `prosrc` from
+the live catalog], any session that has not set the variables errors rather
+than returning NULL. That is a good fail-closed property in the request path —
+but it means FORCE would break migrations and backups unless the helpers were
+relaxed first, which would itself weaken the fail-closed behaviour. Recommend
+`security_invoker`.
+
+A regression test is cheap and currently absent: seed two tenants, scope a
+session to one, assert every view returns only that tenant's rows.
 
 ### 3.2 `entity_status_changes` is written staff-owned
 
@@ -450,8 +522,10 @@ invites when it describes read-only Postgres access "for ad-hoc queries".
 
 ## 11. Open questions for the team
 
-1. §3.1 — are the views intended to bypass RLS, or is `security_invoker`
-   simply missing? This is the first thing to settle.
+1. §3.1 — the view bypass is confirmed, so the question is no longer whether
+   but what next: is there any deployed environment with more than one tenant
+   row (i.e. is this live rather than latent), and who owns applying
+   `security_invoker` plus the two-tenant regression test?
 2. §3 — is the un-policied set deliberate? Specifically `user_roles`,
    `stripe_*`, `sent_emails`, `api_calls`.
 3. §3.2 — should an applicant be able to see its own application's status
