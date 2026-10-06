@@ -22,8 +22,15 @@ same: a correct mechanism undermined by a gate that was never tested against
 the value production actually uses.
 
 Beneath those, the core entity tables have no primary keys and no indexes —
-fine at demo scale, an outage at production scale — and tagged deploys are
-configured to proceed with failing tests.
+fine at demo scale, an outage at production scale; tagged deploys proceed with
+failing tests; and **migrations never run on a production deploy at all**, the
+workflow going green regardless.
+
+The recurring theme across all 33 findings is not missing care — it is safety
+mechanisms that exist, work, and are not connected. A comprehensive RLS
+isolation suite that never runs. A ledger invariant check reachable only from
+tests. A production gate asserted by a test that sets a value production never
+uses. The engineering is there; the wiring is not.
 
 **Recommended next step:** confirm the live value of `ENVIRONMENT` and the
 API's ingress exposure today (F1). Everything else can wait a week; that cannot.
@@ -47,6 +54,9 @@ against exposure rather than against velocity.
 | F3 | Build / deploy | **High** | Every `main.yml` run is tag-triggered, and the test step is `continue-on-error: true` for tags — so deploys proceed with failing tests | `.github/workflows/main.yml:24-33`; `demo.yml:24-28` | [verified] |
 | F4 | Data model | **High** | 21 core tables have no primary key and no index on `id`; `application`, `organisation`, `project`, `project_payments` have no indexes at all | `sql/export/schema.sql` (37 PKs / 59 tables; 37 indexes, none on those tables) | [verified] |
 | F5 | Finance | **High** | The ledger invariant check never runs outside tests, so a balance divergence would go undetected | `foundational/finance/ledger/__init__.py:303-311`; only callers are tests and a demo-gated endpoint | [verified] |
+| F20 | Interfaces | **High** | Migrations never run on a `live-*` deploy — the `db-migrations` job condition omits `live-`, and the workflow still goes green | `.github/workflows/main.yml:209-218` | [verified] |
+| F21 | Deploy | **High** | Where migrations do run, they run *after* the new code is live, guaranteeing a window of code/schema mismatch | `main.yml` job graph: `push-image → deploy → db-migrations` | [verified] |
+| F22 | Testing | **High** | A thorough RLS tenant-isolation suite exists but defines no pytest-collectable tests, runs only via a manual recipe, and tests tables not views — the direct reason F2 survived | `foundational/tests/demo/test_rls.py`; `justfile:306-309` | [verified] |
 | F6 | Coupling | Medium | The DB schema is an uncontracted public interface of the frontend — 35 direct SQL sites, no compiler or contract catches a column rename | `frontend/foundational/*.ts` (15 modules import the SQL helper) | [verified] |
 | F7 | Structure | Medium | Four genuine top-level import cycles inside `foundational`, all centred on `entities` | `entities/applications.py:6-7` ↔ `formal/attachments.py:3`; `infra/tickets.py:13` ↔ `entities/applications.py:15`; + `compliance`, `schema` | [verified] |
 | F8 | Data / ops | Medium | `pgutil restore` runs `psql` without `ON_ERROR_STOP`, so a half-failed restore reports success | `sql/pgutil:274` (vs the commented-out `:273` and every other call site) | [verified] |
@@ -56,11 +66,22 @@ against exposure rather than against velocity.
 | F12 | Data model | Medium | Application status has no DB constraint and no transition validation; the canonical list exists only in TypeScript. `ticket` by contrast has a validated state machine | `frontend/foundational/utils/application-status.ts:17-28`; `foundational/entity.py:79-90`; cf. `workspaces/tickets.py:8,148` | [verified] |
 | F13 | Auth | Medium | `Permission.__call__` returns `True` unconditionally in development, so permission behaviour is never exercised locally | `foundational/authz.py:9-15`; also `api/endpoints/auth.py:46-47` | [verified] |
 | F14 | Data model | Medium | All rich user data is stored as a Python `pickle` in `bytea` — opaque to SQL, coupled to the class graph, and a code-execution path for anyone with write access to that column | `foundational/formal/storage.py:87,108` | [verified] |
+| F23 | Interfaces | Medium | The Credas webhook is unauthenticated, with an explicit `TODO` admitting it, on the path that completes identity verification | `integrations/implementations/kyc/credas.py:84`; route at `integrations.py:188` | [verified] |
+| F24 | Interfaces | Medium | The public webhook routes proxy to `${BACKEND_HOST}/webhooks/*`, which does not exist on the API — either dead code or a broken provider callback | `frontend/foundational/authn.ts:62-64`; no `/webhooks` route in `backend/api/` | [verified] |
+| F25 | Testing | Medium | Three test suites (36 test functions) are reachable by no CI path, including every third-party adapter test; `pytest` is commented out in two entrypoints | `backend/{api,integrations}/tests`, `vendor/unrest/tests`; `integrations/entrypoint.sh:26`, `broker/entrypoint.sh:30` | [verified] |
+| F26 | Interfaces | Medium | Six permissions enforce nothing; four are granted to roles by migration 109 | `foundational/authz.py`; `migrations/000000000109__permissions_matrix_v0_2.sql` | [verified] |
+| F27 | Dependencies | Medium | No dependency automation (no Dependabot/Renovate); the `update-poetry` recipe updates only local path deps, never third-party | `.github/` contains only `workflows/`; `justfile:232-236` | [verified] |
+| F28 | Testing | Medium | No coverage measurement anywhere — `coverage` is a declared dev dependency invoked by nothing | `backend/foundational/pyproject.toml:35` | [verified] |
+| F29 | Licensing | Medium | No root `LICENSE` and no copyright statement; `@foundational/core` declares `"license": ""` | repo root; `frontend/foundational/package.json:13` | [verified] |
+| F30 | Observability | Medium | Both webhook handlers log `WEBHOOK_REJECTED` with outcome `"success"` on the success path, inverting any monitoring built on it | `integrations/integrations.py:174-178,195-199` | [verified] |
 | F15 | Hygiene | Low | ~73 MB of generated data dumps committed to git, dominating the repo's line count | `sql/export/{data,demo/data,scenarios/data}.sql` | [verified] |
 | F16 | Boundaries | Low | `grantseekers` imports from `grantmakers`, which is not a declared dependency; the symbol is a 3-line re-export | `grantseekers/app/routes/healthcheck.tsx:2` | [verified] |
 | F17 | Boundaries | Low | BFF calls `POST /audit` directly, breaking the "all mutations via API" rule; `FIXME` and `TODO` on both sides | `api/endpoints/__init__.py:42-46`; `.server/modules.ts:48` | [verified] |
 | F18 | Docs vs reality | Low | `export/schema.sql` is stale by one migration; `backend/app.py` is 0 bytes; README documents a `backend/scheduler` directory that does not exist | — | [verified] |
 | F19 | Dead code | Low | Three views are referenced nowhere: `financial_planning`, `funding_revenue_candidates`, `programme_expense_candidates` | grep of both stacks | [verified]; ad-hoc analyst use [assumed] |
+| F31 | Deploy | Low | The demo VM's basic-auth password is committed in cleartext in a comment, outside the git-crypt filter | `gateway/etc/caddy/Caddyfile.demo:9-11`; `.gitattributes` | [verified] |
+| F32 | Deploy | Low | No API versioning and no rollback procedure; a rollback across a migration boundary has no automated path | endpoint paths are unprefixed; no rollback workflow | [verified] |
+| F33 | Dependencies | Low | `weasyprint`/`pydyf` pinned exactly and `stripe` capped at major 11, with no comment explaining why | `backend/foundational/pyproject.toml:14-20` | [verified]; reason [assumed] |
 
 ---
 
@@ -216,6 +237,68 @@ to recalculate all balances from scratch."
 including a ledger-export failure alert) or after each `commit()`. Decide
 deliberately whether `lockdown` is the right response in production.
 
+## F20 — Migrations never run on a production deploy
+
+**High.** The `db-migrations` job condition (`main.yml:209-218`) lists
+`refs/tags/dev-`, `uat-` and `test-`. `live-` is absent [verified].
+
+The `deploy` job does update the migration job's *image* for live
+(`az containerapp job update`), but nothing ever starts it. So a `live-*` tag
+deploys seven new images, leaves the production schema untouched, and the
+workflow reports success. Code requiring migration 111 can be tagged, deploy
+cleanly, and fail at runtime against a schema that stops at 110.
+
+If this is deliberate — production DDL applied by hand under change control,
+which is a legitimate choice for a system holding grant records — the workflow
+should say so and warn, rather than silently skipping. Detail in
+`05-deployment.md` §3.2.
+
+**Related, and worth asking in the same breath:** `main.yml` starts the job with
+no arguments, so it runs whatever Azure has configured. `demo.yml:201` and
+`restore.yml:23` start the same job with `--args "restore"`, and `restore` drops
+and recreates the database. Those two are pinned to `dev`, but the live job's
+configured arguments are invisible from the repo. Confirm them.
+
+## F21 — Migrations run after the code is live
+
+**High.** Where migrations do run, the job graph is
+`push-image → deploy → db-migrations` [verified from `needs:`]. New containers
+serve traffic before the schema changes. For an additive migration that is a
+window of errors; for anything else it is worse.
+
+Conventional order is migrate-then-deploy with backwards-compatible
+(expand/contract) migrations. Fixing F20 and F21 together is one change to the
+job graph.
+
+## F22 — The RLS isolation suite never runs, and would not have caught F2
+
+**High**, and the most instructive finding in the review.
+
+`foundational/tests/demo/test_rls.py` is a genuinely thorough tenant- and
+organisation-isolation suite. Its own header states it "validates that Postgres
+Row-Level Security policies correctly enforce tenant and organisation isolation
+across every RLS-protected table", and it delivers: read/insert/update/delete
+runners, a cross-tenant actor, a customer with no organisation, and a
+`seed_empty_tables` step so no protected table is skipped for want of data
+[verified].
+
+Three facts about it:
+
+1. **It defines no pytest-collectable test functions.** Everything is a helper
+   or runner; the entry point is `if __name__ == "__main__"`. It sits under
+   `testpaths = ["tests"]` and is named `test_rls.py`, so pytest imports it and
+   collects **zero** tests — silently.
+2. **Only `just testrls` runs it** (`justfile:306-309`). No CI path does.
+3. **It tests tables, not views.** Zero matches for `view`,
+   `project_payment_schedule` or `security_invoker`.
+
+So the property F2 breaks has a dedicated test suite in this repository that
+(a) never runs automatically and (b) has a blind spot exactly where the defect
+is. That is a more interesting failure than forgetting to test — and the fix
+makes `verification/2026-10-06-rls-view-bypass.sh` permanent: convert the file
+to collectable tests, add it to CI, and extend it to iterate the 12 views
+alongside the 41 tables. Detail in `06-testing.md` §3.
+
 ---
 
 ## Strengths
@@ -274,10 +357,12 @@ Worth recording, because a findings list reads worse than the codebase is.
   different checksums, so regenerations. Counts in `01-architecture.md` were
   corrected against source after drafting (module count, permission count,
   inheritance clauses, SQL call sites).
-- **Not yet reviewed:** `03-apis`, `04-dependencies`, `05-deployment`,
-  `06-testing`. Dependency currency and licensing in particular are untouched,
-  and the vendored `unrest` framework needs its own look — it is editable
-  in-tree and unpinned from upstream.
+- **All six reference docs are now written.** One gap remains that this
+  engagement cannot close from a read-only clone: **dependency currency**. The
+  resolved lockfile versions are recorded in `04-dependencies.md` §2.2 and look
+  recent (`certifi 2026.2.25`), but nothing here establishes how far behind
+  latest each package is. That needs `poetry show --outdated` and
+  `pnpm outdated` run against live registries.
 - **Rubric fit.** The rubric's three severities are velocity-shaped and do not
   accommodate security exposure; I added Critical rather than force F1 into
   "High". Worth tuning the rubric now that the stack is known, as it invites.
@@ -290,3 +375,4 @@ Worth recording, because a findings list reads worse than the codebase is.
 | 2026-10-06 | F2 upgraded from inferred to verified-by-execution; scope corrected to include the API role | Reproduced in a throwaway PG16 container against the repo's own schema |
 | 2026-10-06 | F1 added as Critical | Found while verifying the severity of the demo-endpoint exposure for this review |
 | 2026-10-06 | De-duplicated `01`/`02` (02 now owns RLS coverage and DB principals); added four diagrams | Information-architecture pass: separate mechanism from coverage, make the inheritance consequences visual |
+| 2026-10-06 | Added `03-apis`, `04-dependencies`, `05-deployment`, `06-testing`; 14 new findings (F20–F33), 3 of them High | Completing the reference set surfaced the migration-skip on live, the deploy/migrate ordering, and the reason F2 survived |

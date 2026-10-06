@@ -6,17 +6,17 @@ from the `InvestEngland` label used in the engagement CLAUDE.md — see Open que
 
 | Doc | Covers | Status |
 |---|---|---|
-| 00-index.md | This index | in progress |
+| 00-index.md | This index | **done** (58fbc761) |
 | `../../../reviews/2026-10-06-investengland.md` | **Findings, severity-rated** — start here | **done** (58fbc761) |
 | 01-architecture.md | Services, module boundaries, dependency direction | **done** (58fbc761) |
 | 02-data-model.md | Schema ownership, migrations, shared state | **done** (58fbc761) |
-| 03-apis.md | External and internal interfaces | not started |
-| 04-dependencies.md | Age, maintenance, licensing, pinning | not started |
-| 05-deployment.md | Environments, config, reproducibility | not started |
-| 06-testing.md | Coverage, mocks, critical gaps | not started |
+| 03-apis.md | External and internal interfaces | **done** (58fbc761) |
+| 04-dependencies.md | Age, maintenance, licensing, pinning | **done** (58fbc761) |
+| 05-deployment.md | Environments, config, reproducibility | **done** (58fbc761) |
+| 06-testing.md | Coverage, mocks, critical gaps | **done** (58fbc761) |
 
 ## Reading order
-1. `reviews/2026-10-06-investengland.md` — Summary + 19 severity-rated findings.
+1. `reviews/2026-10-06-investengland.md` — Summary + 33 severity-rated findings.
 2. This index and the reference docs below for the evidence behind each.
 3. `verification/` — executable repros for findings verified by execution.
 
