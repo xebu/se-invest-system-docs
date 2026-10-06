@@ -64,3 +64,17 @@ out as the remedy. Recommend `security_invoker`.
 Docker Desktop was not running and had to be started; it crashed twice on
 launch before stabilising on the third attempt. Container removed afterwards;
 `git status` in the clone confirmed clean — the repo was never written to.
+
+## Re-run (same day, after Docker Desktop was restarted)
+Re-ran `verification/2026-10-06-rls-view-bypass.sh` from a clean container.
+Reproduced identically: premises `views=12 security_invoker=0 force_rls=0
+owners=admin`; 1 row from the table vs 2 through the view for both
+`queryuser` and `mutateuser`; `security_invoker` fixes it for both; owner
+unaffected. Nothing was lost by the shutdown — the container is torn down at
+the end of each run by design, so the script is the artifact, not the container.
+
+Two cosmetic defects in the script found and fixed on the re-run:
+- `\$U` was escaped inside a quoted echo, so the two role blocks printed
+  identical headers and were indistinguishable.
+- The LEAKED query had no `ORDER BY`, so row order varied between runs.
+Both fixed; re-run confirms self-labelling, deterministic output.

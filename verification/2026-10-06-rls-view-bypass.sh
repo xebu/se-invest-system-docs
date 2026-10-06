@@ -91,12 +91,12 @@ END \$\$;
 SQL
 
 for U in queryuser mutateuser; do
-  echo "== BEFORE FIX, as \$U scoped to tenant A =="
+  echo "== BEFORE FIX, as $U scoped to tenant A =="
   docker exec -i $CTR psql -U $U -d arena -tA <<SQL
 select set_config('rls.tenant','$TA',false); select set_config('rls.owner','$TA',false);
 select '  application table  = '||count(*) from application;
 select '  view               = '||count(*) from project_payment_schedule;
-select '  LEAKED: '||organisation_name||' / '||reference from project_payment_schedule where status='approved';
+select '  LEAKED: '||organisation_name||' / '||reference from project_payment_schedule where status='approved' order by organisation_name;
 SQL
 done
 
@@ -107,7 +107,7 @@ do \$\$ declare v record; begin
   loop execute format('ALTER VIEW public.%I SET (security_invoker = true)', v.relname); end loop; end \$\$;"
 
 for U in queryuser mutateuser; do
-  echo "== AFTER FIX, as \$U scoped to tenant A =="
+  echo "== AFTER FIX, as $U scoped to tenant A =="
   docker exec -i $CTR psql -U $U -d arena -tA <<SQL
 select set_config('rls.tenant','$TA',false); select set_config('rls.owner','$TA',false);
 select '  view = '||count(*)||'  ('||coalesce(string_agg(organisation_name,','),'-')||')' from project_payment_schedule;
