@@ -8,7 +8,7 @@ from the `InvestEngland` label used in the engagement CLAUDE.md — see Open que
 |---|---|---|
 | 00-index.md | This index | in progress |
 | 01-architecture.md | Services, module boundaries, dependency direction | **done** (58fbc761) |
-| 02-data-model.md | Schema ownership, migrations, shared state | not started |
+| 02-data-model.md | Schema ownership, migrations, shared state | **done** (58fbc761) |
 | 03-apis.md | External and internal interfaces | not started |
 | 04-dependencies.md | Age, maintenance, licensing, pinning | not started |
 | 05-deployment.md | Environments, config, reproducibility | not started |
