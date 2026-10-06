@@ -1,0 +1,9 @@
+{
+  "autoMemoryEnabled": false,
+  "permissions": {
+    "deny": [
+      "Edit(~/code/work/sportsengland/sportsengland/**)",
+      "Bash(git push *)"
+    ]
+  }
+}
