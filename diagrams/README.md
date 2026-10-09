@@ -18,7 +18,7 @@ to the code.
 | `request-data-flow.png` | Read/write paths, async runtime, integrations, providers | **accurate** |
 | `tenant-auth-rls-flow.png` | Tenant resolution, authorisation, RLS enforcement | **accurate** |
 | `combined-request-and-tenant-security.png` | Both of the above, as a single two-panel view | **top panel accurate; bottom panel has errors — see below** |
-| `architecture-summary.md` / `.docx` | Written analysis accompanying the diagrams | accurate as a summary of docs 00–02 |
+| `architecture-summary.md` | Written analysis accompanying the diagrams | accurate as a summary of docs 00–02 |
 
 ---
 

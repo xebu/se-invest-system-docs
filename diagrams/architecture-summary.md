@@ -1,8 +1,9 @@
 <!-- reviewed at commit 58fbc761 on 2026-10-06 -->
 # Architecture summary (external analysis)
 
-Text extraction of `architecture-summary.docx` for diffability and in-browser
-reading. The `.docx` is the original.
+Text of the original `.docx`, extracted for diffability and in-browser
+reading. The `.docx` itself is not kept: 4 MB of it was the three diagrams
+re-embedded, and those are alongside this file as PNGs.
 
 **Provenance:** produced by ChatGPT from `00-index.md`, `01-architecture.md`
 and `02-data-model.md` — it did not read the codebase. Its "main gap: a
