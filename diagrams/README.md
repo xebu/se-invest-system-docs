@@ -17,6 +17,7 @@ to the code.
 |---|---|---|
 | `review-method.png` | The review itself: inputs, method, verification loop, artifacts | **accurate** — used as the README header |
 | `release-pipeline.png` | Tag-triggered deploy to Azure Container Apps, and findings F3 / F20 / F21 | **accurate** — one presentational issue, see below |
+| `application-lifecycle.png` | The ten stored statuses, staff vs applicant labels, and the derived award states | **accurate** but for one garbled arrow label, see below |
 | `request-data-flow.png` | Read/write paths, async runtime, integrations, providers | **accurate** |
 | `tenant-auth-rls-flow.png` | Authentication, tenant resolution, authorisation, RLS enforcement | **accurate but for one detail** — see below |
 | `combined-request-and-tenant-security.png` | Both of the above, as a single two-panel view | **top panel accurate; bottom panel has errors — see below** |
@@ -41,6 +42,51 @@ mechanism, run with better inputs, that produced the Keycloak error below.
 
 Checked against the code at `58fbc761`, because a diagram is quoted far more
 often than the document it came from.
+
+### `application-lifecycle.png` — accurate but for one arrow label
+
+Verified against `frontend/foundational/utils/application-status.ts` and the
+transition functions in `entities/{applications,assessments,decisions}.py`: all
+ten state codes; all twenty staff/applicant labels; the five-stage grouping;
+every transition including `contested → accepted|rejected`; `approve()` drawn
+as one function with two outcomes (`accepted → approved`, `rejected → denied`,
+guarded at `decisions.py:137-140`); the seven states collapsing to the single
+applicant label "In Assessment"; all seven derived award mappings; and the
+naming trap separating stored `rejected` from stored `denied`.
+
+**The one defect:** the arrow from `discommended` to `accepted` is labelled
+`rccept()`. It should be `accept()`. The destination card is plainly titled
+`accepted`, so the structure is not in doubt — it is a cosmetic blemish on one
+label.
+
+**Why it was left.** That single label took four values across four
+regenerations — `cocept()`, then correctly `accept()`, then `reject()`, then
+`rccept()` — each time as collateral from fixing something else. See below.
+
+### What four rounds of correction cost
+
+This diagram is the clearest record in the repository of what iterating on a
+generated image actually involves. Each round fixed what was asked and broke
+something that had been right:
+
+| Round | Fixed | Broke |
+|---|---|---|
+| 1 | — | Arrows drawn as a linear chain; `cocept()` typo; band enclosed 6 of 7 |
+| 2 | Arrows, band, typo | `rejected` relabelled DE04 (it is DE02, and DE04 is `denied`) |
+| 3 | `rejected` code | `discommended → accepted` relabelled `reject()` |
+| 4 | Stray full stop | Same label again, now `rccept()` |
+
+Two things follow, and both are worth stating to anyone judging this method:
+
+1. **Targeted edits do not localise.** Every round must be re-checked in full,
+   not at the point of change. The round-2 regression — two cards sharing the
+   code DE04 — would have gone unnoticed by anyone checking only the arrows
+   they had just asked to fix, and it directly undermined the naming-trap
+   callout beside it.
+2. **There is a point where another round is a bad trade.** By round four the
+   remaining defect was one character on one label, while each round carried a
+   demonstrated risk of a new error elsewhere. Stopping is the correct move;
+   the blemish is cheaper than the risk.
 
 ### `release-pipeline.png` — accurate, with one presentational issue
 
