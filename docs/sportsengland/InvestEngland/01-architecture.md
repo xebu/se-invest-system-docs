@@ -350,19 +350,50 @@ The cleanest abstraction in the codebase [verified].
 (`foundational/integrations/__init__.py:13-23`).
 
 Resolution is per-tenant and runtime
-(`foundational/integrations/__init__.py:25-41`): the tenant's `integrations`
-config supplies a provider name, falling back to a hardcoded default
-(`aml`→`creditsafe`, `pay`→`ptx`, `id`→`credas`, …). **If the configured value
-starts with `http`, the `$proxy` implementation is selected instead** — an
-HTTP client that forwards the same interface call to the `integrations` service
-authenticated with the tenant's API key
-(`foundational/integrations/proxies.py:22-62`).
+(`foundational/integrations/__init__.py:25-41`). The mechanism is a single
+test — **if the resolved value starts with `http`, the `$proxy`
+implementation is selected**, an HTTP client forwarding the same interface
+call to the `integrations` service under the tenant's API key
+(`foundational/integrations/proxies.py:22-62`). Otherwise the concrete
+provider is constructed in-process.
+
+What decides that test is subtler than it first looks, and line 29 is the
+whole trick [verified]:
+
+```python
+default = default if not proxy else configuration["integration_host"]
+value   = conf.get(domain, default)
+```
+
+Every accessor takes `proxy=True` by default (`get_aml_client(proxy=True)`,
+…). So for an ordinary caller the hardcoded default — `creditsafe`, `ptx`,
+`credas` — is **discarded and replaced by the integration host URL** before the
+lookup. Unset configuration therefore resolves to a URL and takes the proxy
+branch. The hardcoded names are reached only when `proxy=False`, or when a
+tenant names a provider explicitly.
+
+And every `proxy=False` call site in the repository is **inside the
+integrations service itself** — 16 of them in
+`backend/integrations/integrations.py`, plus its tests and one internal geo
+cross-call [verified]. So the flag is not really a configuration toggle; it is
+what distinguishes caller-side from service-side:
+
+| Caller | `proxy` | Resolves to |
+|---|---|---|
+| domain code in `api`, `broker`, `scheduler` | `True` (default) | integration host URL → `$proxy` → HTTP |
+| the `integrations` service itself | `False` (explicit) | hardcoded default or tenant override → in-process provider |
+
+The same function returns an HTTP proxy to the domain layer and the real
+provider to the service that owns it. A tenant can still pin a specific
+provider by name, which is the configuration path; but the default topology is
+out-of-process, not in-process.
 
 ```
   domain code:  client = await get_aml_client()
                        │
                        ▼
-    tenant.integrations['aml'] ── unset ──▶ hardcoded default: 'creditsafe'
+    tenant.integrations['aml'] ── unset ──▶ proxy=True  ▶ integration host URL
+                       │                      proxy=False ▶ 'creditsafe'
                        │                                 │
                        └────────────────┬────────────────┘
                                         ▼
