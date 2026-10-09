@@ -18,6 +18,7 @@ to the code.
 | `review-method.png` | The review itself: inputs, method, verification loop, artifacts | **accurate** — used as the README header |
 | `release-pipeline.png` | Tag-triggered deploy to Azure Container Apps, and findings F3 / F20 / F21 | **accurate** — one presentational issue, see below |
 | `application-lifecycle.png` | The ten stored statuses, staff vs applicant labels, and the derived award states | **accurate** but for one garbled arrow label, see below |
+| `integration-resolution.png` | Per-tenant provider resolution, the `$proxy` swap, and the caller/service split | **accurate** — two cosmetic residuals, see below |
 | `request-data-flow.png` | Read/write paths, async runtime, integrations, providers | **accurate** |
 | `tenant-auth-rls-flow.png` | Authentication, tenant resolution, both DB roles, RLS enforcement | **accurate** — see below |
 | `combined-request-and-tenant-security.png` | Both of the above, as a single two-panel view | **top panel accurate; bottom panel has errors — see below** |
@@ -42,6 +43,48 @@ mechanism, run with better inputs, that produced the Keycloak error below.
 
 Checked against the code at `58fbc761`, because a diagram is quoted far more
 often than the document it came from.
+
+### `integration-resolution.png` — accurate
+
+Verified against `foundational/integrations/__init__.py:13-41`,
+`proxies.py:22-62` and `backend/integrations/implementations/`: all ten domain
+keys and their hardcoded defaults; all twelve concrete providers, correctly
+grouped; the four counts (10 keys, 9 interfaces — `company` and `charity`
+share `DueDiligenceService` — 10 `$proxy` registrations, 12 provider
+registrations); both registry lookups, including the second one performed
+inside the integrations service; the `ServerError` on an unrecognised tag; and
+the `proxy` flag semantics, including that all 16 `proxy=False` call sites are
+inside the integrations service itself.
+
+**Two cosmetic residuals**, neither worth another round:
+
+- The caption on the keys/defaults table still reads "Each capability has a
+  hardcoded default provider if no tenant override is set" — the pre-correction
+  framing. Panel 2 and the "One function, two answers" panel both state it
+  correctly, so the diagram contradicts itself mildly in one caption.
+- Two apparent glyph artefacts to check at full resolution: "authenticat**a**d"
+  on the proxy arrow, and "Serve**c**Error" in key point 4.
+
+#### This diagram corrected the documentation, not the other way round
+
+Round 1 was accurate against the prompt and **wrong against the code**, because
+the prompt repeated an error in `01-architecture.md` §6. I had written that an
+unset tenant key falls back to a hardcoded provider name. Line 29 of
+`integrations/__init__.py` overwrites that default with the integration host
+URL whenever `proxy=True` — which is every accessor's default — so an ordinary
+caller resolves to a URL and takes the proxy branch. The hardcoded names are
+reached only when `proxy=False`.
+
+Checking the diagram against source rather than against its own prompt surfaced
+that, and the corrected architecture is **better** than what was documented:
+`proxy` is not a configuration toggle but the thing separating caller from
+service, and the default topology is out-of-process.
+
+That is the second review correction produced by drawing a picture — see also
+F12, where a diagram faithfully reproduced a wrong claim about transition
+validation. A generated diagram inherits its source's errors silently and
+renders them at full confidence, which makes fact-checking one an unexpectedly
+effective audit of the prose it came from.
 
 ### `application-lifecycle.png` — accurate but for one arrow label
 
