@@ -23,8 +23,19 @@ was ever committed to the client's repository.
 | `docs/sportsengland/InvestEngland/` | Reference docs 00–06: architecture, data model, interfaces, dependencies, deployment, testing. |
 | `verification/` | Executable reproductions for findings proven by execution, not inference. |
 | `sessions/` | Working notes — method, corrections made mid-review, what was checked and how. |
+| [`diagrams/`](diagrams/) | Architecture views (request/data flow, tenant/auth/RLS) plus a written summary, **generated from the docs rather than the code** — with an accuracy check against the codebase. |
 
 Current state: **1 Critical, 8 High, 17 Medium, 8 Low.**
+
+### A note on the diagrams
+
+`diagrams/` holds architecture views produced by a model reading the reference
+docs — not the codebase. Two of the three are accurate; the third has a
+fabricated identity provider and the wrong RLS variable names, because the
+generating model filled gaps with conventional answers. Each is checked against
+the code in [`diagrams/README.md`](diagrams/README.md), and the discrepancies
+are documented rather than quietly corrected, since they show precisely where
+generated documentation drifts. Read that file before quoting a diagram.
 
 ## Conventions
 
