@@ -15,6 +15,7 @@ to the code.
 
 | File | Covers | Status |
 |---|---|---|
+| `review-method.png` | The review itself: inputs, method, verification loop, artifacts | **accurate** — used as the README header |
 | `request-data-flow.png` | Read/write paths, async runtime, integrations, providers | **accurate** |
 | `tenant-auth-rls-flow.png` | Authentication, tenant resolution, authorisation, RLS enforcement | **accurate but for one detail** — see below |
 | `combined-request-and-tenant-security.png` | Both of the above, as a single two-panel view | **top panel accurate; bottom panel has errors — see below** |
@@ -23,6 +24,19 @@ to the code.
 ---
 
 ## Accuracy check
+
+### `review-method.png` — accurate
+
+Checked figure by figure: 975 tracked files, ~108,000 hand-written lines, 19
+migrations, 59 tables, commit `58fbc761`; 7 reference documents, 34 findings at
+1 Critical / 8 High / 17 Medium / 8 Low, 1 executable reproduction, 2 session
+notes. The three footer items are findings **F22**, **F5** and **F1**, each
+stated correctly.
+
+Worth noting *why* this one is clean. It was generated from a prompt carrying
+every figure and claim explicitly, rather than from prose it had to interpret.
+Nothing was left for it to fill in, and nothing was invented. That is the same
+mechanism, run with better inputs, that produced the Keycloak error below.
 
 Checked against the code at `58fbc761`, because a diagram is quoted far more
 often than the document it came from.

@@ -1,5 +1,7 @@
 # Sport England Investment System — review
 
+![Reviewing a codebase with an LLM — method and output](diagrams/review-method.png)
+
 Independent review and reference documentation for the Sport England
 Investment System (repo `sportsengland/InvestmentSystem`, codename **Arena**),
 carried out October 2026 against commit `58fbc761`.
