@@ -1,9 +1,21 @@
 {
   "autoMemoryEnabled": false,
   "permissions": {
+    "allow": [
+      "Bash(git push)",
+      "Bash(git push origin main)",
+      "Bash(git push -u origin main)",
+      "Bash(git push --set-upstream origin main)"
+    ],
     "deny": [
       "Edit(~/code/work/sportsengland/sportsengland/**)",
-      "Bash(git push *)"
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git push --mirror*)",
+      "Bash(git push --delete*)",
+      "Bash(git push *--force*)",
+      "Bash(git push *--mirror*)",
+      "Bash(git push *--delete*)"
     ]
   }
 }
