@@ -30,6 +30,8 @@ to the code.
 
 ### `review-method.png` — accurate
 
+![Reviewing a codebase with an LLM — method and output](review-method.png)
+
 Checked figure by figure: 975 tracked files, ~108,000 hand-written lines, 19
 migrations, 59 tables, commit `58fbc761`; 7 reference documents, 34 findings at
 1 Critical / 8 High / 17 Medium / 8 Low, 1 executable reproduction, 2 session
@@ -45,6 +47,8 @@ Checked against the code at `58fbc761`, because a diagram is quoted far more
 often than the document it came from.
 
 ### `integration-resolution.png` — accurate
+
+![Integration resolution — one interface, two runtimes](integration-resolution.png)
 
 Verified against `foundational/integrations/__init__.py:13-41`,
 `proxies.py:22-62` and `backend/integrations/implementations/`: all ten domain
@@ -87,6 +91,8 @@ renders them at full confidence, which makes fact-checking one an unexpectedly
 effective audit of the prose it came from.
 
 ### `application-lifecycle.png` — accurate but for one arrow label
+
+![Application lifecycle — what staff see and what applicants see](application-lifecycle.png)
 
 Verified against `frontend/foundational/utils/application-status.ts` and the
 transition functions in `entities/{applications,assessments,decisions}.py`: all
@@ -133,6 +139,8 @@ Two things follow, and both are worth stating to anyone judging this method:
 
 ### `release-pipeline.png` — accurate, with one presentational issue
 
+![Release pipeline — and where it leaks](release-pipeline.png)
+
 Verified: the trigger globs; all seven ACR image names exactly
 (`frontend-external`, `frontend-internal`, `backend-api`,
 `backend-integrations`, `backend-broker`, `backend-scheduler`,
@@ -158,6 +166,8 @@ hold-back.
 
 ### `request-data-flow.png` — accurate
 
+![Request and data flow](request-data-flow.png)
+
 Verified: the BFF read path uses a separate read-only credential while
 mutations go through the API (`01-architecture.md` §3); the integrations
 service is reached either in-process or by proxy (§6); Redis/Taskiq carries
@@ -168,6 +178,8 @@ Its callout — *"the database schema is effectively a frontend interface becaus
 BFF reads can bypass the API entirely"* — is a fair statement of finding **F6**.
 
 ### `tenant-auth-rls-flow.png` — accurate
+
+![Tenant, auth and RLS flow](tenant-auth-rls-flow.png)
 
 Third revision, and the only one of the three that is clean.
 
@@ -212,6 +224,8 @@ the request does not predict the size of the change.** Re-check the whole
 artefact every round, or do small text fixes by hand.
 
 ### `combined-request-and-tenant-security.png` — bottom panel is wrong
+
+![Combined request flow and tenant security (superseded)](combined-request-and-tenant-security.png)
 
 The top panel ("Request / data flow") is accurate, including the service ports
 (api 8080, integrations 8081).

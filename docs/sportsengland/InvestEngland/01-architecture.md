@@ -25,7 +25,8 @@ Seven deployable units, built from two Dockerfiles as multi-stage targets
 | `migrations` | bash | `backend/sql/pgutil` | — |
 
 Supporting services: Postgres 16, Redis, and a Caddy 2.9 gateway
-[verified: `docker-compose.yml`].
+[verified: `docker-compose.yml`]. Rendered view:
+[`diagrams/request-data-flow.png`](../../../diagrams/request-data-flow.png).
 
 `broker` and `scheduler` are the **same image and the same code**, differing
 only in the command passed (`backend/Dockerfile:30-38`). The README's reference
@@ -211,6 +212,9 @@ policies on the child tables") [verified: `000000000000__rls.sql:221`]. The
 inheritance model itself, and the other three things that fail to descend, are
 `02-data-model.md` §2.
 
+Rendered view, including the two authentication paths and both database
+roles: [`diagrams/tenant-auth-rls-flow.png`](../../../diagrams/tenant-auth-rls-flow.png).
+
 How a row is evaluated — and where that evaluation is skipped:
 
 ```
@@ -340,7 +344,8 @@ Layer-respecting dependencies by contrast: `tasks → entities/finance/infra`
 
 ## 6. The integrations seam
 
-The cleanest abstraction in the codebase [verified].
+The cleanest abstraction in the codebase [verified]. Rendered view:
+[`diagrams/integration-resolution.png`](../../../diagrams/integration-resolution.png).
 
 `foundational` declares abstract service interfaces —
 `AntiMoneyLaunderingService`, `DueDiligenceService`,

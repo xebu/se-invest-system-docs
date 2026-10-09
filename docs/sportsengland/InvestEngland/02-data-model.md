@@ -372,6 +372,10 @@ That one guard is on the right transition: `approve()` is the authorisation
 step that creates the project or issues the rejection. But it means the state
 machine is enforced at its last gate and nowhere earlier.
 
+The full lifecycle, with staff and applicant labels side by side and the
+derived award states, is drawn in
+[`diagrams/application-lifecycle.png`](../../../diagrams/application-lifecycle.png).
+
 By contrast `ticket` *does* have a full state machine: a `TRANSITIONS`
 dict checked on every change, raising on an illegal move
 (`foundational/workspaces/tickets.py:8,148`) [verified]. The newer subsystem is

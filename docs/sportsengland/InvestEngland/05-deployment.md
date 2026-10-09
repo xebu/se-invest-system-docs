@@ -97,6 +97,9 @@ Two manual workflows exist, both hardcoded to `dev`: `demo.yml`
 
 ## 3. The release pipeline
 
+Rendered view, with F3, F20 and F21 marked:
+[`diagrams/release-pipeline.png`](../../../diagrams/release-pipeline.png).
+
 ### 3.1 The test gate is open — F3
 
 `main.yml` has two test steps [verified: `:24-33`]:
