@@ -19,7 +19,7 @@ to the code.
 | `release-pipeline.png` | Tag-triggered deploy to Azure Container Apps, and findings F3 / F20 / F21 | **accurate** — one presentational issue, see below |
 | `application-lifecycle.png` | The ten stored statuses, staff vs applicant labels, and the derived award states | **accurate** but for one garbled arrow label, see below |
 | `request-data-flow.png` | Read/write paths, async runtime, integrations, providers | **accurate** |
-| `tenant-auth-rls-flow.png` | Authentication, tenant resolution, authorisation, RLS enforcement | **accurate but for one detail** — see below |
+| `tenant-auth-rls-flow.png` | Authentication, tenant resolution, both DB roles, RLS enforcement | **accurate** — see below |
 | `combined-request-and-tenant-security.png` | Both of the above, as a single two-panel view | **top panel accurate; bottom panel has errors — see below** |
 | `architecture-summary.md` | Written analysis accompanying the diagrams | accurate as a summary of docs 00–02 |
 
@@ -124,45 +124,49 @@ matches `backend/integrations/implementations/`.
 Its callout — *"the database schema is effectively a frontend interface because
 BFF reads can bypass the API entirely"* — is a fair statement of finding **F6**.
 
-### `tenant-auth-rls-flow.png` — accurate but for one detail
+### `tenant-auth-rls-flow.png` — accurate
 
-This is a corrected second revision. The first attempt named Keycloak as the
-identity provider and used the wrong session-variable names; both are fixed.
+Third revision, and the only one of the three that is clean.
 
-Verified correct: the two authentication paths — applicants use email plus a
-one-time code with an API-issued JWT, staff use **Azure External ID**
-(`login.microsoftonline.com`) and only on the staff portal
-(`foundational/sso.py:16`, `grantmakers/app/routes/sso.login.tsx:23`); tenant
-resolution by `X-API-Key` then `X-Tenant-Domain`
-(`backend/api/endpoints/auth.py:40-52`); the variables `rls.tenant` and
-`rls.owner`, with owner correctly identified as the *organisation*; the four
-access rules (`000000000000__rls.sql`); the read-only/read-write principal
-split; and the F2 caveat, confirmed by execution — see `verification/`.
+Verified panel by panel: the two authentication paths (applicants on email plus
+a one-time code with an API-issued JWT signed by a per-tenant secret; staff on
+**Azure External ID**, `login.microsoftonline.com`, staff portal only);
+**header-first tenant resolution** — `X-API-Key`, else the `X-Tenant-Domain`
+header forwarded by the frontend, resolved *before* the JWT is read, with the
+JWT's tenant claim then compared against it to detect a mismatch
+(`backend/api/endpoints/auth.py:40-56`); **both** database roles, BFF on
+`POSTGRES_QUERY_URI` / `readonly_access` and API on `POSTGRES_MUTATE_URI` /
+`readwrite_access` (`vendor/unrest/unrest/db/pool.py:106,114`;
+`frontend/foundational/.server/configuration.ts:31`);
+`set_config('rls.tenant'|'rls.owner', …, false)` with the `is_local = false`
+consequence spelled out (`.server/db.ts:25-26`); and the view-bypass caveat,
+finding **F2**, confirmed by execution — see `verification/`.
 
-**The one error: `set_config(..., true)` should be `false`.** The diagram shows
+One imprecision worth knowing, not worth another round: panel 5 attributes
+`set_config` to both services. That is the **BFF's** mechanism. The backend
+issues plain `SET rls.tenant = '…'` (`vendor/unrest/unrest/db/pool.py:67,69`).
+Both are session-scoped, so the effect the diagram describes is right for both
+paths; only the function name is BFF-specific.
 
-```
-set_config('rls.tenant', <tenant>, true)
-set_config('rls.owner',  <owner>,  true)
-```
+#### What three rounds cost
 
-The third argument is `is_local`: `true` scopes the setting to the current
-transaction, `false` to the whole session. The code uses **`false`**
-(`frontend/foundational/.server/db.ts:25-26`).
+| Round | Fixed | Broke |
+|---|---|---|
+| 1 | — | Keycloak at a fabricated domain; `app.current_tenant`/`app.current_user`; no view caveat |
+| 2 | All three | `set_config(…, true)` — should be `false` |
+| 3 | `false` | Tenant resolution redrawn as coming from JWT claims; "Single database role" |
+| 4 | Both regressions | nothing |
 
-The backend does not use `set_config` at all — it issues plain
-`SET rls.tenant = '...'` (`vendor/unrest/unrest/db/pool.py:67,69`), which is
-also session-scoped, and restores the previous value when returning the
-connection to the pool.
+Round 3 is the one to note. The request was a **single character** — `true` to
+`false`. What came back was a redesign that fixed it and silently dropped two
+verified facts: the header-based tenant resolution and the read-only/read-write
+role split. Neither was mentioned in the request, and both had been correct in
+the previous revision.
 
-The distinction matters more than it looks. Session-scoped RLS context persists
-on a **pooled** connection after the work finishes, so correctness depends on
-every subsequent caller setting it again before querying. In the BFF that holds
-— the `sql` wrapper sets both variables at the top of every transaction — and
-the backend pool restores prior values on release. So this is not a defect, but
-the diagram asserts a stronger guarantee (transaction-scoped, self-cleaning)
-than the code provides. Worth drawing correctly precisely because the weaker
-form is the one with a failure mode.
+The lesson is the same one the lifecycle diagram taught, and it is the single
+most useful thing to know about iterating on generated images: **the size of
+the request does not predict the size of the change.** Re-check the whole
+artefact every round, or do small text fixes by hand.
 
 ### `combined-request-and-tenant-security.png` — bottom panel is wrong
 
