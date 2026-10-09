@@ -16,6 +16,7 @@ to the code.
 | File | Covers | Status |
 |---|---|---|
 | `review-method.png` | The review itself: inputs, method, verification loop, artifacts | **accurate** — used as the README header |
+| `release-pipeline.png` | Tag-triggered deploy to Azure Container Apps, and findings F3 / F20 / F21 | **accurate** — one presentational issue, see below |
 | `request-data-flow.png` | Read/write paths, async runtime, integrations, providers | **accurate** |
 | `tenant-auth-rls-flow.png` | Authentication, tenant resolution, authorisation, RLS enforcement | **accurate but for one detail** — see below |
 | `combined-request-and-tenant-security.png` | Both of the above, as a single two-panel view | **top panel accurate; bottom panel has errors — see below** |
@@ -40,6 +41,31 @@ mechanism, run with better inputs, that produced the Keycloak error below.
 
 Checked against the code at `58fbc761`, because a diagram is quoted far more
 often than the document it came from.
+
+### `release-pipeline.png` — accurate, with one presentational issue
+
+Verified: the trigger globs; all seven ACR image names exactly
+(`frontend-external`, `frontend-internal`, `backend-api`,
+`backend-integrations`, `backend-broker`, `backend-scheduler`,
+`database-migrator`); the dead untagged test step and the
+`continue-on-error` mechanism by which a failed step still passes the job
+(**F3**); the `db-migrations` condition omitting `live-` (**F20**); the
+deploy-before-migrate ordering (**F21**); and the side note that a separate
+workflow tests every branch push.
+
+**Presentational issue — the icons invert the message.** The `test` card marks
+the *tagged* branch with a green tick and the *untagged* branch with a grey
+cross. Read as "which branch runs", that is correct. Read as "which branch is
+healthy" — the more natural reading on a diagram titled *"where it leaks"* —
+it is backwards: the ticked branch is the one that lets failing tests through.
+Swapping the tick for a warning glyph would fix it.
+
+**Small omission.** The deploy job makes eight `az containerapp` calls, not
+seven: the seven service updates shown, plus `az containerapp job update` for
+the migration job (`main.yml:204`). Worth knowing because it sharpens F20 — on
+a `live-` deploy the migration job's *image* is updated and the job is then
+never *started*, which reads more like an oversight than a deliberate
+hold-back.
 
 ### `request-data-flow.png` — accurate
 
