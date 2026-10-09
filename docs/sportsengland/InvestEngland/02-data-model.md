@@ -359,7 +359,20 @@ approved, denied, challenged`. There is no CHECK constraint, no Python enum,
 and no transition table. `entity.progress()` writes whatever string it is
 given (`foundational/entity.py:79-90`) [verified].
 
-By contrast `ticket` *does* have a validated state machine: a `TRANSITIONS`
+Validation is not wholly absent, but it is thin. Of the nine functions that
+move an application between states, **one** checks where it is coming from:
+`approve()` rejects any source state other than `accepted` or `rejected`, and
+returns early if the application is already `approved` or `denied`
+(`foundational/entities/decisions.py:137-140`) [verified]. The other eight —
+`submit`, `retract`, `recommend`, `discommend`, `contested`, `accept`,
+`reject`, and the challenge path — write unconditionally. (`submit()` has a
+precondition, but it checks terms acceptance, not state.)
+
+That one guard is on the right transition: `approve()` is the authorisation
+step that creates the project or issues the rejection. But it means the state
+machine is enforced at its last gate and nowhere earlier.
+
+By contrast `ticket` *does* have a full state machine: a `TRANSITIONS`
 dict checked on every change, raising on an illegal move
 (`foundational/workspaces/tickets.py:8,148`) [verified]. The newer subsystem is
 the more rigorous one — the same pattern as the index coverage.

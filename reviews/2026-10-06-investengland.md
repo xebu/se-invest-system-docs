@@ -64,7 +64,7 @@ against exposure rather than against velocity.
 | F9 | Migrations | Medium | The migration generator emits `YYYYMMDDHHMM` while every existing file is low-sequential; the first date-stamped migration silently strands any later low-numbered file | `sql/pgutil:307` vs `migrations/` (`000000000000`–`000000000110`) | [verified] |
 | F10 | Tenancy | Medium | 16 tables carry `tenant_id` with no RLS policy; several are defensible, the rest undocumented | `sql/export/schema.sql`; 41 of 59 tables policied | [verified]; intent [assumed] |
 | F11 | Finance | Medium | `integer` pence on payment line items caps at £21,474,836.47, while the aggregate columns above them are `bigint` | `sql/export/schema.sql:535-541,306-308,1369` vs `:207,488` | [verified]; domain limit unknown |
-| F12 | Data model | Medium | Application status has no DB constraint and no transition validation; the canonical list exists only in TypeScript. `ticket` by contrast has a validated state machine | `frontend/foundational/utils/application-status.ts:17-28`; `foundational/entity.py:79-90`; cf. `workspaces/tickets.py:8,148` | [verified] |
+| F12 | Data model | Medium | Application status has no DB constraint, and source-state validation exists at exactly one transition (`approve`) out of nine; the canonical status list lives only in TypeScript. `ticket` by contrast has a full transition table | `decisions.py:137-140` (the one guard); `frontend/foundational/utils/application-status.ts:17-28`; `foundational/entity.py:79-90`; cf. `workspaces/tickets.py:8,148` | [verified] |
 | F13 | Auth | Medium | `Permission.__call__` returns `True` unconditionally in development, so permission behaviour is never exercised locally | `foundational/authz.py:9-15`; also `api/endpoints/auth.py:46-47` | [verified] |
 | F14 | Data model | Medium | All rich user data is stored as a Python `pickle` in `bytea` — opaque to SQL, coupled to the class graph, and a code-execution path for anyone with write access to that column | `foundational/formal/storage.py:87,108` | [verified] |
 | F23 | Interfaces | Medium | The Credas webhook is unauthenticated, with an explicit `TODO` admitting it, on the path that completes identity verification | `integrations/implementations/kyc/credas.py:84`; route at `integrations.py:188` | [verified] |
@@ -410,6 +410,13 @@ Worth recording, because a findings list reads worse than the codebase is.
   because the three comments are unambiguous and the downside is unauthenticated
   payment authorisation. **Confirming A1 is the single highest-value action
   available.**
+- **F12 narrowed (2026-10-06).** It originally read "no transition
+  validation". That is too strong: `decisions.py:137-140` guards `approve()`,
+  rejecting any source state other than `accepted` or `rejected` and
+  short-circuiting if already `approved`/`denied`. It is the only guarded
+  transition of the nine — but it is also the most consequential one, since it
+  creates the project or issues the rejection. The finding stands; its wording
+  did not.
 - **Corrections made during the review.** F2 was initially written as a
   BFF-only problem; execution showed the API role is affected identically. I
   also claimed "all views" before `pg_depend` showed 11 of 12, and missed the
@@ -438,3 +445,4 @@ Worth recording, because a findings list reads worse than the codebase is.
 | 2026-10-06 | De-duplicated `01`/`02` (02 now owns RLS coverage and DB principals); added four diagrams | Information-architecture pass: separate mechanism from coverage, make the inheritance consequences visual |
 | 2026-10-06 | Added `03-apis`, `04-dependencies`, `05-deployment`, `06-testing`; 14 new findings (F20–F33), 3 of them High | Completing the reference set surfaced the migration-skip on live, the deploy/migrate ordering, and the reason F2 survived |
 | 2026-10-06 | F34 added (High): BACS instructions omit reference and payee name. F22 strengthened with the six "RLS compat" test FIXMEs | Found while auditing TODO/FIXME density |
+| 2026-10-06 | F12 narrowed: `approve()` does validate its source state | Found while extracting the real transitions for the lifecycle diagram |
