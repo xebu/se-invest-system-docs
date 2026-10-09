@@ -30,12 +30,17 @@ Current state: **1 Critical, 8 High, 17 Medium, 8 Low.**
 ### A note on the diagrams
 
 `diagrams/` holds architecture views produced by a model reading the reference
-docs — not the codebase. Two of the three are accurate; the third has a
-fabricated identity provider and the wrong RLS variable names, because the
-generating model filled gaps with conventional answers. Each is checked against
-the code in [`diagrams/README.md`](diagrams/README.md), and the discrepancies
-are documented rather than quietly corrected, since they show precisely where
-generated documentation drifts. Read that file before quoting a diagram.
+docs — not the codebase. Each has been checked line by line against the code,
+and the results are in [`diagrams/README.md`](diagrams/README.md). Read that
+before quoting a diagram.
+
+The first revision of the tenant/auth view invented an identity provider and
+used the wrong RLS variable names, because a model filling gaps from prose
+reaches for the conventional answer. It was regenerated once those facts were
+supplied, and is now accurate but for one detail. Both revisions are kept: the
+superseded one is the clearest illustration in this repository of where
+generated documentation drifts, and of why every claim here carries a
+`[verified]` or `[assumed]` label.
 
 ## Conventions
 

@@ -16,7 +16,7 @@ to the code.
 | File | Covers | Status |
 |---|---|---|
 | `request-data-flow.png` | Read/write paths, async runtime, integrations, providers | **accurate** |
-| `tenant-auth-rls-flow.png` | Tenant resolution, authorisation, RLS enforcement | **accurate** |
+| `tenant-auth-rls-flow.png` | Authentication, tenant resolution, authorisation, RLS enforcement | **accurate but for one detail** — see below |
 | `combined-request-and-tenant-security.png` | Both of the above, as a single two-panel view | **top panel accurate; bottom panel has errors — see below** |
 | `architecture-summary.md` | Written analysis accompanying the diagrams | accurate as a summary of docs 00–02 |
 
@@ -38,17 +38,45 @@ matches `backend/integrations/implementations/`.
 Its callout — *"the database schema is effectively a frontend interface because
 BFF reads can bypass the API entirely"* — is a fair statement of finding **F6**.
 
-### `tenant-auth-rls-flow.png` — accurate
+### `tenant-auth-rls-flow.png` — accurate but for one detail
 
-Verified: tenant resolution by `X-API-Key` then `X-Tenant-Domain`
-(`backend/api/endpoints/auth.py:40-52`); the session variables are correctly
-named `rls.tenant` and `rls.owner`; the four access rules match
-`backend/sql/migrations/000000000000__rls.sql`; and the read-only/read-write
-principal split is real.
+This is a corrected second revision. The first attempt named Keycloak as the
+identity provider and used the wrong session-variable names; both are fixed.
 
-It also carries the right caveat: *"Views owned by admin may bypass underlying
-RLS unless security_invoker or FORCE RLS is used."* That is finding **F2**,
-which was confirmed by execution — see `verification/`.
+Verified correct: the two authentication paths — applicants use email plus a
+one-time code with an API-issued JWT, staff use **Azure External ID**
+(`login.microsoftonline.com`) and only on the staff portal
+(`foundational/sso.py:16`, `grantmakers/app/routes/sso.login.tsx:23`); tenant
+resolution by `X-API-Key` then `X-Tenant-Domain`
+(`backend/api/endpoints/auth.py:40-52`); the variables `rls.tenant` and
+`rls.owner`, with owner correctly identified as the *organisation*; the four
+access rules (`000000000000__rls.sql`); the read-only/read-write principal
+split; and the F2 caveat, confirmed by execution — see `verification/`.
+
+**The one error: `set_config(..., true)` should be `false`.** The diagram shows
+
+```
+set_config('rls.tenant', <tenant>, true)
+set_config('rls.owner',  <owner>,  true)
+```
+
+The third argument is `is_local`: `true` scopes the setting to the current
+transaction, `false` to the whole session. The code uses **`false`**
+(`frontend/foundational/.server/db.ts:25-26`).
+
+The backend does not use `set_config` at all — it issues plain
+`SET rls.tenant = '...'` (`vendor/unrest/unrest/db/pool.py:67,69`), which is
+also session-scoped, and restores the previous value when returning the
+connection to the pool.
+
+The distinction matters more than it looks. Session-scoped RLS context persists
+on a **pooled** connection after the work finishes, so correctness depends on
+every subsequent caller setting it again before querying. In the BFF that holds
+— the `sql` wrapper sets both variables at the top of every transaction — and
+the backend pool restores prior values on release. So this is not a defect, but
+the diagram asserts a stronger guarantee (transaction-scoped, self-cleaning)
+than the code provides. Worth drawing correctly precisely because the weaker
+form is the one with a failure mode.
 
 ### `combined-request-and-tenant-security.png` — bottom panel is wrong
 
@@ -99,6 +127,7 @@ the `[verified]` / `[assumed]` labelling used throughout this repository: a
 diagram cannot show its own confidence, so it reads as uniformly authoritative
 whether or not it was checked.
 
-**Recommendation:** regenerate the bottom panel with the three corrections, or
-publish `tenant-auth-rls-flow.png` on its own — it covers the same ground
-correctly.
+**Status:** superseded. `tenant-auth-rls-flow.png` is the corrected second
+revision and covers the same ground properly. This file is kept only as the
+worked example of the drift described above — it should not be used as
+reference documentation. Delete it if the illustration is not wanted.
